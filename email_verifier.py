@@ -348,5 +348,9 @@ def verify_and_clean_database_emails(min_confidence: int = 80) -> Tuple[int, int
     print(f"  - Total Checked:            {total_checked}")
     print(f"  - Verified High Confidence: {valid_count} ({(valid_count/total_checked*100 if total_checked else 0):.1f}%)")
     print(f"  - Low Confidence Filtered:  {removed_count}")
+
+    import main
+    all_active = db.get_all_jobs(active_only=True)
+    main.export_jobs_to_csv(all_active, "lmia_jobs_master.csv")
     return total_checked, valid_count, removed_count
 
