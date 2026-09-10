@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from typing import List, Dict, Optional, Set
+import data_cleaner
 
 try:
     import psycopg2
@@ -125,6 +126,7 @@ def get_seen_job_ids() -> Set[str]:
             return {row['job_id'] for row in cursor.fetchall()}
 
 def save_job(job_data: Dict):
+    job_data = data_cleaner.clean_job_dict(job_data)
     init_db()
     if is_postgres():
         conn = get_db()

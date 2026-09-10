@@ -4,6 +4,7 @@ import base64
 from datetime import datetime
 from typing import List, Dict, Optional
 import requests
+import data_cleaner
 
 try:
     import gspread
@@ -34,7 +35,8 @@ SHEET_HEADERS = [
     "Scraped Date"
 ]
 
-def format_job_row(job: Dict) -> List[str]:
+def format_job_row(raw_job: Dict) -> List[str]:
+    job = data_cleaner.clean_job_dict(raw_job)
     return [
         str(job.get("job_id") or ""),
         str(job.get("job_title") or ""),
@@ -48,7 +50,7 @@ def format_job_row(job: Dict) -> List[str]:
         str(job.get("full_address") or ""),
         str(job.get("salary") or ""),
         str(job.get("job_type") or ""),
-        str(job.get("vacancies") or ""),
+        str(job.get("vacancies") or "1"),
         str(job.get("lmia_status") or "LMIA requested"),
         str(job.get("date_posted") or ""),
         str(job.get("advertised_until") or ""),

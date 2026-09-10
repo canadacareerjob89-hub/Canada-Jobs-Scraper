@@ -7,6 +7,7 @@ from curl_cffi import requests
 from scrapling import Selector
 import db
 import email_verifier
+import data_cleaner
 
 def fetch_with_retry(session: requests.Session, url: str, method: str = "GET", headers: dict = None, data: dict = None, max_retries: int = 3):
     """Fetch URL with rate-limit detection (429) and exponential backoff retry."""
@@ -227,6 +228,7 @@ def scrape_lmia_jobs(limit: Optional[int] = None,
                     "enrichment_status": enrichment_status
                 }
                 
+                job_record = data_cleaner.clean_job_dict(job_record)
                 db.save_job(job_record)
                 db_ids.add(job_id)
                 new_jobs.append(job_record)
