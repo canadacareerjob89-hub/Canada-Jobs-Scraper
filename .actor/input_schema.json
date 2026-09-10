@@ -1,0 +1,41 @@
+{
+    "title": "Canada LMIA Job Scraper Input",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "mode": {
+            "title": "Scrape Mode",
+            "type": "string",
+            "description": "Select whether to run a daily delta update, full scrape, or NOC sync.",
+            "editor": "select",
+            "default": "daily",
+            "enum": ["daily", "full", "update_noc", "export_only"],
+            "enumTitles": [
+                "Daily Delta Update (New Postings + NOC Sync)",
+                "Full Scrape (All Active Canadian LMIA Jobs)",
+                "NOC Code Multi-Tier Resolver",
+                "Export Current DB to Dataset"
+            ]
+        },
+        "max_jobs": {
+            "title": "Max Jobs Limit (0 for all)",
+            "type": "integer",
+            "description": "Maximum number of new jobs to scrape. Set to 0 to scrape all available.",
+            "default": 0,
+            "minimum": 0
+        },
+        "enable_hermes_ai": {
+            "title": "Enable Hermes AI Enrichment",
+            "type": "boolean",
+            "description": "Use Hermes AI agent to research missing employer websites and emails.",
+            "default": false
+        },
+        "openrouter_api_key": {
+            "title": "OpenRouter API Key (Optional)",
+            "type": "string",
+            "description": "API key for OpenRouter AI enrichment if enabled.",
+            "editor": "textfield",
+            "isSecret": true
+        }
+    }
+}

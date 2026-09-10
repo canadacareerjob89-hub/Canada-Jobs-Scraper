@@ -2,3 +2,4 @@ curl_cffi>=0.7.0
 scrapling>=0.2.0
 dnspython>=2.6.0
 python-dotenv>=1.0.0
+apify>=2.0.0

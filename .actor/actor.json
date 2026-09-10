@@ -1,0 +1,11 @@
+{
+    "actorSpecification": 1,
+    "name": "canada-lmia-job-bank-scraper",
+    "title": "Canada Job Bank LMIA Scraper with NOC and Contacts",
+    "description": "Autonomous scraper for Canada Job Bank LMIA postings with official NOC codes, verified emails, and live contact data.",
+    "version": "1.0",
+    "meta": {
+        "templateId": "python-empty"
+    },
+    "dockerfile": "./Dockerfile"
+}
