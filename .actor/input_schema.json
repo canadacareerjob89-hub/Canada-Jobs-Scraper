@@ -1,4 +1,4 @@
-{
+﻿{
     "title": "Canada LMIA Job Scraper Input",
     "type": "object",
     "schemaVersion": 1,
@@ -11,7 +11,7 @@
             "default": "daily",
             "enum": ["daily", "full", "update_noc", "export_only"],
             "enumTitles": [
-                "Daily Delta Update (New Postings + NOC Sync)",
+                "Daily Delta Update (New Postings + NOC Sync + Sheets Sync)",
                 "Full Scrape (All Active Canadian LMIA Jobs)",
                 "NOC Code Multi-Tier Resolver",
                 "Export Current DB to Dataset"
@@ -23,6 +23,40 @@
             "description": "Maximum number of new jobs to scrape. Set to 0 to scrape all available.",
             "default": 0,
             "minimum": 0
+        },
+        "database_url": {
+            "title": "Neon PostgreSQL Connection String (Optional)",
+            "type": "string",
+            "description": "Direct Neon PostgreSQL URL for auto-ingestion into the CRM. e.g. postgresql://user:pwd@ep-sample.neon.tech/neondb?sslmode=require",
+            "editor": "textfield",
+            "isSecret": true
+        },
+        "google_sheet_id": {
+            "title": "Google Sheet ID (Optional)",
+            "type": "string",
+            "description": "The spreadsheet ID from your Google Sheet URL (docs.google.com/spreadsheets/d/<ID>/edit).",
+            "editor": "textfield"
+        },
+        "google_sheet_tab_name": {
+            "title": "Google Sheet Tab Name",
+            "type": "string",
+            "description": "Tab name to update with today's newly scraped data (overwrites yesterday's data on each run).",
+            "editor": "textfield",
+            "default": "Today_LMIA_Jobs"
+        },
+        "google_service_account_json": {
+            "title": "Google Service Account JSON (Optional)",
+            "type": "string",
+            "description": "Paste the Google Cloud Service Account JSON credentials to write directly to Google Sheets.",
+            "editor": "textarea",
+            "isSecret": true
+        },
+        "google_sheet_webhook_url": {
+            "title": "Google Apps Script Webhook URL (Optional)",
+            "type": "string",
+            "description": "Alternative to Service Account: Paste your Google Apps Script Webhook URL.",
+            "editor": "textfield",
+            "isSecret": true
         },
         "enable_hermes_ai": {
             "title": "Enable Hermes AI Enrichment",

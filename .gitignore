@@ -1,5 +1,11 @@
-__pycache__/
+﻿__pycache__/
 *.pyc
 .env
+.env.local
 .DS_Store
 scratch/
+.token-savior-cache.json
+.code-review-graph/
+*.db
+lmia_jobs_test*.csv
+service_account.json
