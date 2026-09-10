@@ -75,8 +75,8 @@ def export_all_to_crm():
         {'id': '4', 'title': 'DONE', 'createdAt': '2026-01-01T00:00:00.000Z'}
     ]
 
-    print(f'Loading active jobs from database...')
-    raw_jobs = db.get_all_jobs(active_only=True)
+    print(f'Loading all historical and active jobs from database...')
+    raw_jobs = db.get_all_jobs(active_only=False)
     if not raw_jobs:
         with db.get_db() as conn:
             if db.is_postgres():

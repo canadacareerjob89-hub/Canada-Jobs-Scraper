@@ -41,11 +41,8 @@ async def main_async():
         db_type = "Neon PostgreSQL" if db.is_postgres() else "SQLite"
         Actor.log.info(f"=== Starting Canada LMIA Scraper Actor (Mode: {mode}, DB: {db_type}) ===")
         
-        # 1. Initialize DB and clean expired jobs
+        # 1. Initialize DB
         db.init_db()
-        purged = db.clean_expired_jobs()
-        if purged > 0:
-            Actor.log.info(f"Purged {purged} expired job postings from database.")
 
         limit = max_jobs if max_jobs > 0 else None
         new_scraped_jobs = []

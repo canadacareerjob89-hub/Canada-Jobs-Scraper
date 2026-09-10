@@ -37,7 +37,6 @@ jobs:
           OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL || 'google/gemini-2.0-flash-lite:free' }}
           GOOGLE_SHEET_WEBHOOK_URL: ${{ secrets.GOOGLE_SHEET_WEBHOOK_URL }}
         run: |
-          python -u main.py --clean-expired
           python -u main.py --daily
           python -u update_noc_codes.py
           python -u main.py --export lmia_jobs_master.csv

@@ -20,14 +20,9 @@ def run_pipeline():
     print(f"      Started At: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}               ")
     print("================================================================================\n")
 
-    # 1. Initialize Database & Clean Expired Jobs
-    print("[1/5] Initializing Database & Purging Expired Postings...")
+    # 1. Initialize Database
+    print("[1/5] Initializing Database...")
     db.init_db()
-    purged = db.clean_expired_jobs()
-    if purged > 0:
-        print(f"  -> Purged {purged} expired job postings from database.")
-    else:
-        print("  -> Database is clean. No expired postings.")
 
     # 2. NOC Code Multi-Tier Resolution
     print("\n[2/5] Running NOC Code Multi-Tier Resolver...")
