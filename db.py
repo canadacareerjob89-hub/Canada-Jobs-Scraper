@@ -30,7 +30,7 @@ def get_db():
         conn = psycopg2.connect(pg_url, cursor_factory=RealDictCursor)
         return conn
     else:
-        conn = sqlite3.connect(DB_FILE)
+        conn = sqlite3.connect(DB_FILE, timeout=30.0)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -62,6 +62,8 @@ def init_db():
                     company_website TEXT,
                     company_phone TEXT,
                     enrichment_status TEXT,
+                    email_confidence TEXT DEFAULT '',
+                    email_verification_status TEXT DEFAULT '',
                     scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
@@ -71,7 +73,17 @@ def init_db():
                     BEGIN
                         ALTER TABLE jobs ADD COLUMN noc_code TEXT;
                     EXCEPTION
-                        WHEN duplicate_column THEN RAISE NOTICE 'column noc_code already exists in jobs.';
+                        WHEN duplicate_column THEN NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE jobs ADD COLUMN email_confidence TEXT DEFAULT '';
+                    EXCEPTION
+                        WHEN duplicate_column THEN NULL;
+                    END;
+                    BEGIN
+                        ALTER TABLE jobs ADD COLUMN email_verification_status TEXT DEFAULT '';
+                    EXCEPTION
+                        WHEN duplicate_column THEN NULL;
                     END;
                 END $$;
             """)
@@ -102,6 +114,8 @@ def init_db():
                     company_website TEXT,
                     company_phone TEXT,
                     enrichment_status TEXT,
+                    email_confidence TEXT DEFAULT '',
+                    email_verification_status TEXT DEFAULT '',
                     scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -109,6 +123,10 @@ def init_db():
             columns = [row[1] for row in cursor.fetchall()]
             if 'noc_code' not in columns:
                 conn.execute("ALTER TABLE jobs ADD COLUMN noc_code TEXT")
+            if 'email_confidence' not in columns:
+                conn.execute("ALTER TABLE jobs ADD COLUMN email_confidence TEXT DEFAULT ''")
+            if 'email_verification_status' not in columns:
+                conn.execute("ALTER TABLE jobs ADD COLUMN email_verification_status TEXT DEFAULT ''")
             conn.commit()
 
 def get_seen_job_ids() -> Set[str]:
@@ -140,7 +158,9 @@ def save_job(job_data: Dict):
                 employer_email = CASE WHEN EXCLUDED.employer_email != '' AND EXCLUDED.employer_email IS NOT NULL THEN EXCLUDED.employer_email ELSE jobs.employer_email END, 
                 company_website = CASE WHEN EXCLUDED.company_website != '' AND EXCLUDED.company_website IS NOT NULL THEN EXCLUDED.company_website ELSE jobs.company_website END, 
                 company_phone = CASE WHEN EXCLUDED.company_phone != '' AND EXCLUDED.company_phone IS NOT NULL THEN EXCLUDED.company_phone ELSE jobs.company_phone END, 
-                enrichment_status = CASE WHEN EXCLUDED.enrichment_status != '' AND EXCLUDED.enrichment_status IS NOT NULL THEN EXCLUDED.enrichment_status ELSE jobs.enrichment_status END
+                enrichment_status = CASE WHEN EXCLUDED.enrichment_status != '' AND EXCLUDED.enrichment_status IS NOT NULL THEN EXCLUDED.enrichment_status ELSE jobs.enrichment_status END,
+                email_confidence = CASE WHEN EXCLUDED.email_confidence != '' AND EXCLUDED.email_confidence IS NOT NULL THEN EXCLUDED.email_confidence ELSE jobs.email_confidence END,
+                email_verification_status = CASE WHEN EXCLUDED.email_verification_status != '' AND EXCLUDED.email_verification_status IS NOT NULL THEN EXCLUDED.email_verification_status ELSE jobs.email_verification_status END
         '''
         with conn.cursor() as cur:
             cur.execute(sql, list(job_data.values()))
@@ -158,7 +178,9 @@ def save_job(job_data: Dict):
                     employer_email = CASE WHEN excluded.employer_email != '' AND excluded.employer_email IS NOT NULL THEN excluded.employer_email ELSE jobs.employer_email END, 
                     company_website = CASE WHEN excluded.company_website != '' AND excluded.company_website IS NOT NULL THEN excluded.company_website ELSE jobs.company_website END, 
                     company_phone = CASE WHEN excluded.company_phone != '' AND excluded.company_phone IS NOT NULL THEN excluded.company_phone ELSE jobs.company_phone END, 
-                    enrichment_status = CASE WHEN excluded.enrichment_status != '' AND excluded.enrichment_status IS NOT NULL THEN excluded.enrichment_status ELSE jobs.enrichment_status END
+                    enrichment_status = CASE WHEN excluded.enrichment_status != '' AND excluded.enrichment_status IS NOT NULL THEN excluded.enrichment_status ELSE jobs.enrichment_status END,
+                    email_confidence = CASE WHEN excluded.email_confidence != '' AND excluded.email_confidence IS NOT NULL THEN excluded.email_confidence ELSE jobs.email_confidence END,
+                    email_verification_status = CASE WHEN excluded.email_verification_status != '' AND excluded.email_verification_status IS NOT NULL THEN excluded.email_verification_status ELSE jobs.email_verification_status END
             '''
             conn.execute(sql, list(job_data.values()))
             conn.commit()
@@ -175,30 +197,42 @@ def update_job_noc(job_id: str, noc_code: str):
             conn.execute('UPDATE jobs SET noc_code = ? WHERE job_id = ?', (noc_code, job_id))
             conn.commit()
 
-def update_enrichment(job_id: str, email: str, website: str, phone: str, status: str):
+def update_enrichment(
+    job_id: str,
+    email: str,
+    website: str,
+    phone: str,
+    status: str,
+    email_confidence: str = "",
+    email_verification_status: str = ""
+):
     if is_postgres():
         conn = get_db()
         with conn.cursor() as cur:
             cur.execute('''
                 UPDATE jobs 
-                SET employer_email = CASE WHEN employer_email = '' OR employer_email IS NULL THEN %s ELSE employer_email END,
+                SET employer_email = %s,
                     company_website = %s,
                     company_phone = %s,
-                    enrichment_status = %s
+                    enrichment_status = %s,
+                    email_confidence = CASE WHEN %s != '' THEN %s ELSE email_confidence END,
+                    email_verification_status = CASE WHEN %s != '' THEN %s ELSE email_verification_status END
                 WHERE job_id = %s
-            ''', (email, website, phone, status, job_id))
+            ''', (email, website, phone, status, email_confidence, email_confidence, email_verification_status, email_verification_status, job_id))
         conn.commit()
         conn.close()
     else:
         with get_db() as conn:
             conn.execute('''
                 UPDATE jobs 
-                SET employer_email = CASE WHEN employer_email = '' OR employer_email IS NULL THEN ? ELSE employer_email END,
+                SET employer_email = ?,
                     company_website = ?,
                     company_phone = ?,
-                    enrichment_status = ?
+                    enrichment_status = ?,
+                    email_confidence = CASE WHEN ? != '' THEN ? ELSE email_confidence END,
+                    email_verification_status = CASE WHEN ? != '' THEN ? ELSE email_verification_status END
                 WHERE job_id = ?
-            ''', (email, website, phone, status, job_id))
+            ''', (email, website, phone, status, email_confidence, email_confidence, email_verification_status, email_verification_status, job_id))
             conn.commit()
 
 def get_all_jobs(active_only: bool = True) -> List[Dict]:

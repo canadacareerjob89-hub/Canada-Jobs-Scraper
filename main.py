@@ -18,6 +18,8 @@ CSV_FIELDNAMES = [
     "noc_code",
     "employer_name",
     "employer_email",
+    "email_confidence",
+    "email_verification_status",
     "company_phone",
     "company_website",
     "city",

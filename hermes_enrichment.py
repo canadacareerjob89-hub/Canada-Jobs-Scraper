@@ -10,20 +10,23 @@ from curl_cffi import requests
 from dotenv import load_dotenv
 import db
 import email_verifier
+import google_maps_enricher
 
 load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-lite:free").strip()
 
-# Shared session for web searches to leverage HTTP/2 connection pooling & keep-alive
-_SEARCH_SESSION = None
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Thread-local session for web searches to leverage HTTP/2 connection pooling per worker
+_thread_local = threading.local()
 
 def get_search_session() -> requests.Session:
-    global _SEARCH_SESSION
-    if _SEARCH_SESSION is None:
-        _SEARCH_SESSION = requests.Session(impersonate="chrome124")
-    return _SEARCH_SESSION
+    if not hasattr(_thread_local, "session"):
+        _thread_local.session = requests.Session(impersonate="chrome124")
+    return _thread_local.session
 
 # Comprehensive Canadian Area Codes + North American Toll-Free codes
 CANADIAN_AREA_CODES = {
@@ -94,9 +97,12 @@ EXCLUDED_DOMAINS = {
 }
 
 GENERIC_WORDS = {
-    "inc", "ltd", "corp", "corporation", "llc", "limited", "canada", "canadian",
+    "inc", "ltd", "corp", "corporation", "limited", "llc", "canada", "canadian",
     "services", "solutions", "enterprises", "holdings", "management", "consulting",
-    "group", "company", "the", "and", "co", "ca", "trading", "international", "north"
+    "group", "company", "the", "and", "co", "ca", "trading", "international", "north",
+    "pro", "best", "total", "top", "auto", "cafe", "restaurant", "store", "shop", "express", 
+    "general", "direct", "national", "global", "centre", "center", "care", "homes", "food", "foods",
+    "construction", "logistics", "transport", "freight", "design", "build", "cleaning"
 }
 
 DISCARD_EMAIL_PATTERNS = {
@@ -108,19 +114,46 @@ DISCARD_EMAIL_PATTERNS = {
 EMAIL_REGEX = re.compile(r"\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+\b")
 
 def extract_employer_tokens(employer: str) -> List[str]:
-    """Extract distinctive search tokens from employer name."""
+    """Extract distinctive search tokens from employer name, filtering out generic stopwords."""
     clean = re.sub(r"['’]", "", employer.lower())
     clean = re.sub(r"[^a-zA-Z0-9\s]", " ", clean)
-    tokens = [t for t in clean.split() if len(t) >= 3 and t not in GENERIC_WORDS]
+    tokens = [t for t in clean.split() if len(t) >= 2 and t not in GENERIC_WORDS]
     return tokens
 
 def is_domain_matching_employer(domain: str, employer: str) -> bool:
-    """Check if domain contains any distinctive name tokens of the employer."""
+    """Strictly verify if candidate domain matches distinctive tokens of employer name."""
+    if not domain or not employer:
+        return False
+        
+    domain_clean = domain.lower().replace("www.", "").split(":")[0]
+    domain_body = domain_clean.split(".")[0].replace("-", "")
+    
     tokens = extract_employer_tokens(employer)
     if not tokens:
+        clean = re.sub(r"[^a-zA-Z0-9\s]", " ", employer.lower())
+        tokens = [t for t in clean.split() if len(t) >= 2]
+        
+    if not tokens:
+        return False
+        
+    # 1. Exact concatenated string match (e.g. "protaxblock" in "protaxblockca")
+    concat_all = "".join(tokens)
+    if concat_all in domain_body or domain_body in concat_all:
         return True
-    domain_clean = domain.lower().replace("-", "").replace(".", "")
-    return any(t in domain_clean for t in tokens)
+        
+    # 2. Multi-token evaluation: require at least 60% overlap or minimum 2 distinctive tokens
+    matched_tokens = [t for t in tokens if t in domain_body]
+    if len(tokens) == 1:
+        token = tokens[0]
+        if len(token) >= 2 and (token in domain_body or domain_body in token):
+            return True
+        return False
+    elif len(tokens) >= 2:
+        match_ratio = len(matched_tokens) / len(tokens)
+        if len(matched_tokens) >= 2 or match_ratio >= 0.6:
+            return True
+            
+    return False
 
 def is_excluded_domain(domain_or_url: str) -> bool:
     """Check if a domain or URL belongs to blacklisted directories, aggregators, or platforms."""
@@ -465,11 +498,45 @@ def enrich_single_job(job: Dict) -> Dict:
             
         time.sleep(random.uniform(0.3, 0.6))
 
-    # If no website passed directory and domain match filters
+    # Source 2: Google Maps & Local Place Intelligence Fallback
+    maps_source_used = False
     if not best_website:
-        print("  -> No authentic company domain matched. Skipped.")
-        db.update_enrichment(job_id, "", "", "", "No Standalone Website Found")
-        job["enrichment_status"] = "No Standalone Website Found"
+        print("  -> Source 1 (Web Search) found no direct site. Querying Source 2 (Google Maps / Local Places)...")
+        maps_data = google_maps_enricher.search_google_maps_place(
+            employer_name=employer,
+            city=city,
+            province=job.get("province", ""),
+            full_address=address
+        )
+        if maps_data:
+            maps_source_used = True
+            if maps_data.get("website"):
+                best_website = maps_data["website"]
+                print(f"  -> Discovered Website via Google Maps: {best_website}")
+                # Crawl homepage & contact endpoints
+                ems, phs, txt = extract_contacts_from_url(best_website, session)
+                discovered_emails.extend(ems)
+                discovered_phones.extend(phs)
+                combined_page_text += " " + txt[:2000]
+                if txt:
+                    for sub in ["/contact", "/contact-us", "/about", "/about-us", "/nous-joindre"]:
+                        c_url = urljoin(best_website, sub)
+                        c_ems, c_phs, c_txt = extract_contacts_from_url(c_url, session)
+                        discovered_emails.extend(c_ems)
+                        discovered_phones.extend(c_phs)
+                        combined_page_text += " " + c_txt[:1200]
+                        if discovered_emails:
+                            break
+
+            if maps_data.get("phone"):
+                discovered_phones.append(maps_data["phone"])
+                print(f"  -> Discovered Phone via Google Maps: {maps_data['phone']}")
+
+    # If neither Source 1 nor Source 2 found an authentic website or place
+    if not best_website and not discovered_phones:
+        print("  -> No authentic company domain or local map place found. Skipped.")
+        db.update_enrichment(job_id, "", "", "", "No Standalone Website or Map Place Found")
+        job["enrichment_status"] = "No Standalone Website or Map Place Found"
         return job
 
     # AI Enhancement & Verification if OpenRouter key is configured
@@ -492,36 +559,85 @@ def enrich_single_job(job: Dict) -> Dict:
                 discovered_phones.append(formatted_p)
                 ai_used = True
 
-    # Final cleanup & filtering
-    clean_emails = [e for e in list(set(discovered_emails)) if not is_excluded_email(e)]
-    clean_phones = [p for p in list(set(discovered_phones)) if validate_and_format_phone(p)]
+    # 1. Strict Confidence Scoring & DNS Deliverability Filter
+    verified_email_candidates = []
+    top_score = 0
+    top_grade = ""
+    top_confidence_str = ""
 
-    final_email = ", ".join(clean_emails) if clean_emails else job.get("employer_email", "")
+    parsed_web_domain = urlparse(best_website).netloc.lower().replace("www.", "")
+
+    for em in set(discovered_emails):
+        if is_excluded_email(em):
+            continue
+        em_parts = em.lower().strip().split("@")
+        if len(em_parts) != 2:
+            continue
+        em_domain = em_parts[1].strip(".")
+
+        # Discovered email domain MUST strictly match or be sub-domain of verified company domain
+        if em_domain != parsed_web_domain and not parsed_web_domain.endswith("." + em_domain) and not em_domain.endswith("." + parsed_web_domain):
+            continue
+
+        score, grade, explanation = email_verifier.calculate_email_confidence(
+            email=em,
+            employer_name=employer,
+            company_website=best_website,
+            source="web",
+            is_ai_verified=ai_used
+        )
+
+        if score >= 80:  # Minimum 80% confidence threshold
+            verified_email_candidates.append((em, score, grade, explanation))
+
+    verified_email_candidates.sort(key=lambda x: x[1], reverse=True)
+
+    clean_phones = [p for p in list(set(discovered_phones)) if validate_and_format_phone(p)]
     final_phone = ", ".join(clean_phones[:2]) if clean_phones else ""
-    
-    if final_email:
-        status = "Enriched by OpenRouter AI" if ai_used else "Enriched (Email Found)"
+
+    if verified_email_candidates:
+        final_email = verified_email_candidates[0][0]
+        top_score = verified_email_candidates[0][1]
+        top_grade = verified_email_candidates[0][2]
+        top_confidence_str = f"{top_score}%"
+        status = f"Enriched ({top_confidence_str} Verified)"
     elif best_website:
+        final_email = ""
+        top_confidence_str = "0%"
+        top_grade = "NO_EMAIL_DISCOVERED"
         status = "Enriched (Website Discovered)"
     else:
-        status = "Searched (No Direct Email Found)"
-    
+        final_email = ""
+        top_confidence_str = "0%"
+        top_grade = "NO_STANDALONE_WEBSITE"
+        status = "No Standalone Website Found"
+
     print(f"  -> Website: {best_website or 'N/A'}")
-    print(f"  -> Email: {final_email or 'N/A'}")
+    print(f"  -> Verified Email (>=80%): {final_email or 'N/A'} {f'[{top_confidence_str}]' if final_email else ''}")
     print(f"  -> Phone: {final_phone or 'N/A'}")
     print(f"  -> Status: {status}")
 
-    db.update_enrichment(job_id, final_email, best_website, final_phone, status)
-    
+    db.update_enrichment(
+        job_id=job_id,
+        email=final_email,
+        website=best_website,
+        phone=final_phone,
+        status=status,
+        email_confidence=top_confidence_str,
+        email_verification_status=top_grade
+    )
+
     job["employer_email"] = final_email
     job["company_website"] = best_website
     job["company_phone"] = final_phone
     job["enrichment_status"] = status
-    
+    job["email_confidence"] = top_confidence_str
+    job["email_verification_status"] = top_grade
+
     return job
 
-def run_hermes_enrichment(jobs_list: Optional[List[Dict]] = None) -> List[Dict]:
-    """Run Hermes Agent enrichment on active pending or missing-email jobs."""
+def run_hermes_enrichment(jobs_list: Optional[List[Dict]] = None, concurrency: int = 8) -> List[Dict]:
+    """Run Hermes Agent enrichment on active pending or missing-email jobs concurrently."""
     today_str = time.strftime("%Y-%m-%d")
     if jobs_list is None:
         all_active = db.get_all_jobs(active_only=True)
@@ -533,17 +649,36 @@ def run_hermes_enrichment(jobs_list: Optional[List[Dict]] = None) -> List[Dict]:
         ]
 
     ai_tag = f"OpenRouter AI: {OPENROUTER_MODEL}" if OPENROUTER_API_KEY else "Fast Heuristic Mode (No API Key set)"
+    total = len(jobs_to_enrich)
     print(f"\n=======================================================")
-    print(f" Hermes Enrichment Agent: Processing {len(jobs_to_enrich)} active jobs missing email")
-    print(f" Mode: {ai_tag}")
-    print(f"=======================================================")
+    print(f" Hermes Enrichment Agent: Processing {total} active jobs missing email")
+    print(f" Mode: {ai_tag} | Concurrency: {concurrency} workers")
+    print(f"=======================================================\n")
+
+    if total == 0:
+        return []
 
     enriched_results = []
-    for idx, job in enumerate(jobs_to_enrich, start=1):
-        print(f"\n[{idx}/{len(jobs_to_enrich)}] Enriching Job ID {job.get('job_id')}...")
-        enriched = enrich_single_job(job)
-        enriched_results.append(enriched)
-        time.sleep(random.uniform(0.5, 1.0))
+    completed = 0
+
+    if concurrency <= 1 or total <= 2:
+        for idx, job in enumerate(jobs_to_enrich, start=1):
+            print(f"\n[{idx}/{total}] Enriching Job ID {job.get('job_id')}...")
+            enriched = enrich_single_job(job)
+            enriched_results.append(enriched)
+            time.sleep(random.uniform(0.3, 0.6))
+    else:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = {executor.submit(enrich_single_job, job): job for job in jobs_to_enrich}
+            for future in as_completed(futures):
+                try:
+                    enriched = future.result()
+                    enriched_results.append(enriched)
+                    completed += 1
+                    if completed % 10 == 0 or completed == total:
+                        print(f"[*] Hermes Progress: {completed}/{total} enriched ({(completed/total)*100:.1f}%)")
+                except Exception as e:
+                    print(f"[!] Error enriching job: {e}")
 
     print(f"\n[Hermes Agent] Enrichment complete for {len(enriched_results)} jobs.")
     return enriched_results
