@@ -10,6 +10,7 @@ load_dotenv(override=True)
 import db
 import core_scraper
 import hermes_enrichment
+import google_sheets
 
 CSV_FIELDNAMES = [
     "job_id",
@@ -69,6 +70,7 @@ def main():
     parser.add_argument("--db-status", action="store_true", help="Test database health, schema, read/write permissions, and show current statistics")
     parser.add_argument("--clean-expired", action="store_true", help="Purge past expired job postings from the database")
     parser.add_argument("--verify-emails", action="store_true", help="Verify all stored emails against live DNS MX mail server records")
+    parser.add_argument("--sync-sheets", action="store_true", help="Sync active database records to Google Sheet tab (overwrites previous run)")
     parser.add_argument("--export", type=str, nargs="?", const="lmia_jobs_master.csv", help="Export active database jobs to CSV")
     
     args = parser.parse_args()
@@ -90,6 +92,12 @@ def main():
         import email_verifier
         email_verifier.verify_and_clean_database_emails()
         return
+
+    elif args.sync_sheets:
+        all_jobs = db.get_all_jobs(active_only=True)
+        print(f"\n>>> Syncing {len(all_jobs)} active database records to Google Sheets...\n")
+        google_sheets.sync_today_jobs_to_sheets(all_jobs)
+        return
     
     if args.test:
         limit = args.test
@@ -105,6 +113,7 @@ def main():
         
         output_file = "lmia_jobs_test.csv"
         export_jobs_to_csv(test_results, output_file)
+        google_sheets.sync_today_jobs_to_sheets(test_results)
         
     elif args.full:
         print("\n>>> Running FULL SCRAPE of ALL Active LMIA Postings across Canada...\n")
@@ -118,7 +127,9 @@ def main():
         print("\n>>> Running Hermes Agent Enrichment on all pending database records...\n")
         hermes_enrichment.run_hermes_enrichment()
         
-        export_jobs_to_csv(db.get_all_jobs(active_only=True), master_file)
+        latest_jobs = db.get_all_jobs(active_only=True)
+        export_jobs_to_csv(latest_jobs, master_file)
+        google_sheets.sync_today_jobs_to_sheets(latest_jobs)
         
     elif args.daily:
         print("\n>>> Running DAILY LMIA SCRAPER with Automatic Deduplication...\n")
@@ -132,6 +143,7 @@ def main():
         today_str = datetime.now().strftime("%Y-%m-%d")
         daily_file = f"lmia_jobs_{today_str}.csv"
         export_jobs_to_csv(db.get_all_jobs(active_only=True), daily_file)
+        google_sheets.sync_today_jobs_to_sheets(new_jobs if new_jobs else db.get_all_jobs(active_only=True))
         
     elif args.enrich_only:
         print("\n>>> Running Hermes Enrichment on pending database records...\n")
