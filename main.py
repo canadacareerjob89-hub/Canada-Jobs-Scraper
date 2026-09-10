@@ -9,7 +9,6 @@ load_dotenv(override=True)
 
 import db
 import core_scraper
-import hermes_enrichment
 import google_sheets
 
 CSV_FIELDNAMES = [
@@ -64,11 +63,10 @@ def export_jobs_to_csv(jobs_list, filename: str):
     print(f"\n[+] Successfully exported {len(jobs_list)} records to: {target_file}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Canada Job Bank LMIA Scraper with Hermes Agent Enrichment")
+    parser = argparse.ArgumentParser(description="Canada Job Bank LMIA Scraper")
     parser.add_argument("--test", type=int, nargs="?", const=10, help="Run a test scrape on N fresh postings (default: 10)")
     parser.add_argument("--daily", action="store_true", help="Run full daily scrape for new postings with deduplication")
     parser.add_argument("--full", action="store_true", help="Run a complete scrape of all active LMIA postings across all pages")
-    parser.add_argument("--enrich-only", action="store_true", help="Run Hermes enrichment on pending jobs in DB")
     parser.add_argument("--db-status", action="store_true", help="Test database health, schema, read/write permissions, and show current statistics")
     parser.add_argument("--clean-expired", action="store_true", help="Purge past expired job postings from the database")
     parser.add_argument("--verify-emails", action="store_true", help="Verify all stored emails against live DNS MX mail server records")
@@ -106,9 +104,6 @@ def main():
         print(f"\n>>> Running TEST SCRAPE on {limit} fresh LMIA jobs...\n")
         scraped_jobs = core_scraper.scrape_lmia_jobs(limit=limit, stop_on_seen=False)
         
-        print(f"\n>>> Running Hermes Agent Enrichment on test batch...\n")
-        hermes_enrichment.run_hermes_enrichment(scraped_jobs)
-        
         seen_test_ids = {j["job_id"] for j in scraped_jobs}
         all_jobs = db.get_all_jobs(active_only=True)
         test_results = [j for j in all_jobs if j["job_id"] in seen_test_ids]
@@ -125,32 +120,17 @@ def main():
         all_jobs = db.get_all_jobs(active_only=True)
         master_file = "lmia_jobs_master.csv"
         export_jobs_to_csv(all_jobs, master_file)
-        
-        print("\n>>> Running Hermes Agent Enrichment on all pending database records...\n")
-        hermes_enrichment.run_hermes_enrichment()
-        
-        latest_jobs = db.get_all_jobs(active_only=True)
-        export_jobs_to_csv(latest_jobs, master_file)
-        google_sheets.sync_today_jobs_to_sheets(latest_jobs)
+        google_sheets.sync_today_jobs_to_sheets(all_jobs)
         
     elif args.daily:
         print("\n>>> Running DAILY LMIA SCRAPER with Automatic Deduplication...\n")
         new_jobs = core_scraper.scrape_lmia_jobs(limit=None, stop_on_seen=True, max_consecutive_seen=10)
         print(f"\nScraped {len(new_jobs)} fresh LMIA jobs today.")
         
-        if new_jobs:
-            print("\n>>> Running Hermes Agent Enrichment on fresh postings...\n")
-            hermes_enrichment.run_hermes_enrichment(new_jobs)
-            
         today_str = datetime.now().strftime("%Y-%m-%d")
         daily_file = f"lmia_jobs_{today_str}.csv"
         export_jobs_to_csv(db.get_all_jobs(active_only=True), daily_file)
         google_sheets.sync_today_jobs_to_sheets(new_jobs if new_jobs else db.get_all_jobs(active_only=True))
-        
-    elif args.enrich_only:
-        print("\n>>> Running Hermes Enrichment on pending database records...\n")
-        hermes_enrichment.run_hermes_enrichment()
-        export_jobs_to_csv(db.get_all_jobs(active_only=True), "lmia_jobs_enriched.csv")
         
     elif args.export:
         print(f"\n>>> Exporting active database records to {args.export}...\n")

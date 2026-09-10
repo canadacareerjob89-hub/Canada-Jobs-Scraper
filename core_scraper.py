@@ -187,7 +187,7 @@ def scrape_lmia_jobs(limit: Optional[int] = None,
                 
                 employer_email = ""
                 apply_text = ""
-                enrichment_status = "Pending Hermes Enrichment"
+                enrichment_status = "No Direct Email"
                 
                 try:
                     ajax_res = fetch_with_retry(session, job_url, method="POST", headers=headers, data=data)
@@ -233,7 +233,7 @@ def scrape_lmia_jobs(limit: Optional[int] = None,
                 db_ids.add(job_id)
                 new_jobs.append(job_record)
                 
-                status_tag = f"Email: {employer_email}" if employer_email else "[No Direct Email -> Queued for Hermes]"
+                status_tag = f"Email: {employer_email}" if employer_email else "[No Direct Email]"
                 print(f"    + {title} | {employer} | {status_tag}")
                 
                 # Polite randomized delay (1.0s to 2.2s)

@@ -1,4 +1,4 @@
-﻿import os
+import os
 import asyncio
 import sys
 from apify import Actor
@@ -6,7 +6,6 @@ from apify import Actor
 import db
 import core_scraper
 import update_noc_codes
-import hermes_enrichment
 import main
 import google_sheets
 
@@ -16,8 +15,6 @@ async def main_async():
         actor_input = await Actor.get_input() or {}
         mode = actor_input.get("mode", "daily")
         max_jobs = int(actor_input.get("max_jobs", 0))
-        enable_hermes_ai = actor_input.get("enable_hermes_ai", False)
-        api_key = actor_input.get("openrouter_api_key", "").strip()
         
         # Database URL (Neon PostgreSQL or fallback)
         db_url = actor_input.get("database_url", "").strip()
@@ -40,10 +37,6 @@ async def main_async():
         webhook_url = actor_input.get("google_sheet_webhook_url", "").strip()
         if webhook_url:
             os.environ["GOOGLE_SHEET_WEBHOOK_URL"] = webhook_url
-
-        if api_key:
-            hermes_enrichment.OPENROUTER_API_KEY = api_key
-            os.environ["OPENROUTER_API_KEY"] = api_key
 
         db_type = "Neon PostgreSQL" if db.is_postgres() else "SQLite"
         Actor.log.info(f"=== Starting Canada LMIA Scraper Actor (Mode: {mode}, DB: {db_type}) ===")
@@ -74,12 +67,7 @@ async def main_async():
             Actor.log.info("Running NOC Code Multi-Tier Resolver...")
             update_noc_codes.update_all_noc_codes(concurrency=15)
 
-        # 3. Optional Hermes AI Enrichment
-        if enable_hermes_ai and new_scraped_jobs:
-            Actor.log.info("Running Hermes AI Enrichment on newly discovered jobs...")
-            hermes_enrichment.run_hermes_enrichment(new_scraped_jobs)
-
-        # 4. Auto-sync newly scraped jobs to Google Sheet (overwrites yesterday's tab)
+        # 3. Auto-sync newly scraped jobs to Google Sheet (overwrites yesterday's tab)
         jobs_to_sync = new_scraped_jobs if new_scraped_jobs else db.get_all_jobs(active_only=True)
         if jobs_to_sync:
             Actor.log.info(f"Syncing {len(jobs_to_sync)} active/today records to Google Sheets (Tab: '{tab_name}')...")
@@ -92,11 +80,11 @@ async def main_async():
             if synced:
                 Actor.log.info(f"SUCCESS: Google Sheet tab '{tab_name}' updated with today's jobs.")
 
-        # 5. Export to CSV file on disk
+        # 4. Export to CSV file on disk
         all_active_jobs = db.get_all_jobs(active_only=True)
         main.export_jobs_to_csv(all_active_jobs, "lmia_jobs_master.csv")
 
-        # 6. Push all records to Apify Dataset (Allows 1-click CSV/Excel/JSON export in Apify UI)
+        # 5. Push all records to Apify Dataset (Allows 1-click CSV/Excel/JSON export in Apify UI)
         Actor.log.info(f"Pushing {len(all_active_jobs)} active LMIA jobs to Apify Dataset...")
         await Actor.push_data(all_active_jobs)
 

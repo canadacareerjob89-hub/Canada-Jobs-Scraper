@@ -1,4 +1,4 @@
-﻿{
+{
     "title": "Canada LMIA Job Scraper Input",
     "type": "object",
     "schemaVersion": 1,
@@ -55,19 +55,6 @@
             "title": "Google Apps Script Webhook URL (Optional)",
             "type": "string",
             "description": "Alternative to Service Account: Paste your Google Apps Script Webhook URL.",
-            "editor": "textfield",
-            "isSecret": true
-        },
-        "enable_hermes_ai": {
-            "title": "Enable Hermes AI Enrichment",
-            "type": "boolean",
-            "description": "Use Hermes AI agent to research missing employer websites and emails.",
-            "default": false
-        },
-        "openrouter_api_key": {
-            "title": "OpenRouter API Key (Optional)",
-            "type": "string",
-            "description": "API key for OpenRouter AI enrichment if enabled.",
             "editor": "textfield",
             "isSecret": true
         }
