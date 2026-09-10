@@ -142,7 +142,8 @@ def scrape_lmia_jobs(limit: Optional[int] = None,
                     elif "terms of employment" in txt.lower():
                         terms = re.sub(r"Terms of employment", "", txt).strip()
                     elif "vacanc" in txt.lower():
-                        vacancies = re.sub(r"vacancies", "", txt).capitalize().strip()
+                        vac_m = re.search(r"\d+", txt)
+                        vacancies = vac_m.group(0) if vac_m else "1"
                     elif "start" in txt.lower():
                         start_date = txt
                     elif any(s in txt.lower() for s in ["morning", "day", "evening", "night", "shift", "weekend"]) and "weeks" not in txt.lower():

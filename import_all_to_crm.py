@@ -174,7 +174,7 @@ def export_all_to_crm():
             'city': city,
             'province': prov,
             'location': loc_str,
-            'vacancies': str(j.get('vacancies') or '1'),
+            'vacancies': re.search(r'\d+', str(j.get('vacancies') or '1')).group(0) if re.search(r'\d+', str(j.get('vacancies') or '1')) else '1',
             'job_type': str(j.get('job_type') or 'Permanent employment Full time'),
             'lmia_status': str(j.get('lmia_status') or 'LMIA requested'),
             'employer_id': cid,
