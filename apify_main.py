@@ -8,6 +8,7 @@ import core_scraper
 import update_noc_codes
 import main
 import google_sheets
+import sync_to_neon_crm
 
 async def main_async():
     async with Actor:
@@ -81,7 +82,16 @@ async def main_async():
         all_active_jobs = db.get_all_jobs(active_only=True)
         main.export_jobs_to_csv(all_active_jobs, "lmia_jobs_master.csv")
 
-        # 5. Push all records to Apify Dataset (Allows 1-click CSV/Excel/JSON export in Apify UI)
+        # 5. Auto-sync directly to Neon Cloud CRM Database
+        if os.getenv("DATABASE_URL"):
+            Actor.log.info("Auto-syncing scraped records directly to Neon Cloud CRM Database...")
+            try:
+                sync_to_neon_crm.sync_to_neon()
+                Actor.log.info("SUCCESS: Live CRM Database updated with latest scraped records.")
+            except Exception as e:
+                Actor.log.warning(f"Neon CRM DB Sync warning: {e}")
+
+        # 6. Push all records to Apify Dataset (Allows 1-click CSV/Excel/JSON export in Apify UI)
         Actor.log.info(f"Pushing {len(all_active_jobs)} active LMIA jobs to Apify Dataset...")
         await Actor.push_data(all_active_jobs)
 
