@@ -17,8 +17,6 @@ CSV_FIELDNAMES = [
     "noc_code",
     "employer_name",
     "employer_email",
-    "email_confidence",
-    "email_verification_status",
     "company_phone",
     "company_website",
     "city",
@@ -32,7 +30,6 @@ CSV_FIELDNAMES = [
     "lmia_status",
     "date_posted",
     "advertised_until",
-    "enrichment_status",
     "how_to_apply_instructions",
     "job_url"
 ]

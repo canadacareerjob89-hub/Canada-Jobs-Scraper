@@ -19,7 +19,6 @@ SHEET_HEADERS = [
     "NOC Code",
     "Employer Name",
     "Employer Email",
-    "Email Confidence",
     "Company Phone",
     "Company Website",
     "City",
@@ -32,7 +31,6 @@ SHEET_HEADERS = [
     "Date Posted",
     "Advertised Until",
     "Job Bank Link",
-    "Enrichment Status",
     "Scraped Date"
 ]
 
@@ -44,7 +42,6 @@ def format_job_row(raw_job: Dict) -> List[str]:
         str(job.get("noc_code") or ""),
         str(job.get("employer_name") or ""),
         str(job.get("employer_email") or ""),
-        str(job.get("email_confidence") or ("100%" if job.get("employer_email") and "Direct" in str(job.get("enrichment_status")) else ("" if not job.get("employer_email") else "Verified"))),
         str(job.get("company_phone") or ""),
         str(job.get("company_website") or ""),
         str(job.get("city") or ""),
@@ -57,7 +54,6 @@ def format_job_row(raw_job: Dict) -> List[str]:
         str(job.get("date_posted") or ""),
         str(job.get("advertised_until") or ""),
         str(job.get("job_url") or ""),
-        str(job.get("enrichment_status") or ""),
         datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ]
 

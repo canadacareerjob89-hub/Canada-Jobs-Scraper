@@ -217,7 +217,26 @@ def export_all_to_crm():
         deals.append(deal_obj)
         comp_obj['deals']['nodes'].append(deal_obj)
 
+    prev_count = 0
+    if os.path.exists(CRM_JSON_PATH):
+        try:
+            with open(CRM_JSON_PATH, 'rb') as f:
+                old_db = json.loads(f.read().decode('utf-8'))
+                prev_count = len(old_db.get('deals', []))
+        except Exception:
+            pass
+
+    new_jobs_count = max(0, len(deals) - prev_count) if prev_count > 0 else len(deals)
+
+    sync_meta = {
+        'lastSyncTimestamp': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z'),
+        'newJobsCount': new_jobs_count,
+        'totalJobsCount': len(deals),
+        'batchName': 'Daily LMIA Sync'
+    }
+
     master_db = {
+        'syncMeta': sync_meta,
         'companies': companies,
         'contacts': contacts,
         'deals': deals,
@@ -232,9 +251,9 @@ def export_all_to_crm():
     }
 
     if os.path.exists(os.path.dirname(CRM_JSON_PATH)):
-        with open(CRM_JSON_PATH, 'w', encoding='utf-8') as f:
-            json.dump(master_db, f, indent=2, ensure_ascii=False)
-        print(f'[+] Successfully wrote full CRM database with {len(deals)} jobs to: {CRM_JSON_PATH}')
+        with open(CRM_JSON_PATH, 'wb') as f:
+            f.write(json.dumps(master_db, ensure_ascii=False).encode('utf-8'))
+        print(f'[+] Successfully wrote full CRM database with {len(deals)} jobs (new: {new_jobs_count}) to: {CRM_JSON_PATH}')
     else:
         print(f'[!] Warning: CRM path not found at {CRM_JSON_PATH}')
 
