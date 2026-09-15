@@ -36,10 +36,12 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL || 'google/gemini-2.0-flash-lite:free' }}
           GOOGLE_SHEET_WEBHOOK_URL: ${{ secrets.GOOGLE_SHEET_WEBHOOK_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           python -u main.py --daily
           python -u update_noc_codes.py
           python -u main.py --export lmia_jobs_master.csv
+          python -u sync_to_neon_crm.py
 
       - name: Commit & Push Updated Database & CSV
         run: |

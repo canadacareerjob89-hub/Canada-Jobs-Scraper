@@ -6,7 +6,7 @@ import db
 import update_noc_codes
 import hermes_enrichment
 import email_verifier
-import main
+import sync_to_neon_crm
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
@@ -21,15 +21,15 @@ def run_pipeline():
     print("================================================================================\n")
 
     # 1. Initialize Database
-    print("[1/5] Initializing Database...")
+    print("[1/6] Initializing Database...")
     db.init_db()
 
     # 2. NOC Code Multi-Tier Resolution
-    print("\n[2/5] Running NOC Code Multi-Tier Resolver...")
+    print("\n[2/6] Running NOC Code Multi-Tier Resolver...")
     update_noc_codes.update_all_noc_codes(concurrency=15)
 
     # 3. Dual-Source Hermes + Google Maps Places Enrichment
-    print("\n[3/5] Running Dual-Source Enrichment (Corporate Web + Google Maps Places)...")
+    print("\n[3/6] Running Dual-Source Enrichment (Corporate Web + Google Maps Places)...")
     all_active = db.get_all_jobs(active_only=True)
     jobs_needing_enrichment = [
         j for j in all_active 
@@ -40,13 +40,17 @@ def run_pipeline():
         hermes_enrichment.run_hermes_enrichment(jobs_needing_enrichment, concurrency=10)
 
     # 4. Confidence Scoring & Live DNS MX Resolution
-    print("\n[4/5] Running Live DNS MX Verification & Confidence Scoring (>=80% Threshold)...")
+    print("\n[4/6] Running Live DNS MX Verification & Confidence Scoring (>=80% Threshold)...")
     email_verifier.verify_and_clean_database_emails(min_confidence=80)
 
     # 5. Master CSV Export
-    print("\n[5/5] Exporting Final Verified Master Dataset...")
+    print("\n[5/6] Exporting Final Verified Master Dataset...")
     final_jobs = db.get_all_jobs(active_only=True)
     main.export_jobs_to_csv(final_jobs, "lmia_jobs_master.csv")
+
+    # 6. Auto-Sync to Neon Cloud CRM
+    print("\n[6/6] Auto-Syncing to Neon Cloud CRM Database...")
+    sync_to_neon_crm.sync_to_neon()
 
     elapsed = time.time() - start_time
     total = len(final_jobs)
@@ -65,6 +69,7 @@ def run_pipeline():
     print(f"  - Verified Local Phone Numbers:     {phones}")
     print(f"  - Total Execution Time:             {elapsed:.1f} seconds")
     print(f"  - Master File:                      lmia_jobs_master.csv")
+    print(f"  - Neon CRM Status:                  Live Synchronized")
     print("================================================================================\n")
 
 if __name__ == "__main__":
