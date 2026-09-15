@@ -43,13 +43,16 @@ def get_db():
         conn.row_factory = sqlite3.Row
         return conn
 
+def get_table_name() -> str:
+    return "raw_scraped_jobs" if is_postgres() else "jobs"
+
 def init_db():
     pg_url = get_database_url()
     if pg_url and PSYCOPG2_AVAILABLE:
         conn = psycopg2.connect(pg_url, connect_timeout=10)
         with conn.cursor() as cur:
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS jobs (
+                CREATE TABLE IF NOT EXISTS raw_scraped_jobs (
                     job_id TEXT PRIMARY KEY,
                     job_title TEXT,
                     employer_name TEXT,
@@ -80,17 +83,17 @@ def init_db():
                 DO $$ 
                 BEGIN 
                     BEGIN
-                        ALTER TABLE jobs ADD COLUMN noc_code TEXT;
+                        ALTER TABLE raw_scraped_jobs ADD COLUMN noc_code TEXT;
                     EXCEPTION
                         WHEN duplicate_column THEN NULL;
                     END;
                     BEGIN
-                        ALTER TABLE jobs ADD COLUMN email_confidence TEXT DEFAULT '';
+                        ALTER TABLE raw_scraped_jobs ADD COLUMN email_confidence TEXT DEFAULT '';
                     EXCEPTION
                         WHEN duplicate_column THEN NULL;
                     END;
                     BEGIN
-                        ALTER TABLE jobs ADD COLUMN email_verification_status TEXT DEFAULT '';
+                        ALTER TABLE raw_scraped_jobs ADD COLUMN email_verification_status TEXT DEFAULT '';
                     EXCEPTION
                         WHEN duplicate_column THEN NULL;
                     END;
@@ -98,11 +101,11 @@ def init_db():
             """)
             # NeonDB Indexes for high-speed filtering and 0 full-table-scan reads
             cur.execute("""
-                CREATE INDEX IF NOT EXISTS idx_jobs_date_posted ON jobs(date_posted DESC);
-                CREATE INDEX IF NOT EXISTS idx_jobs_advertised_until ON jobs(advertised_until);
-                CREATE INDEX IF NOT EXISTS idx_jobs_noc_code ON jobs(noc_code);
-                CREATE INDEX IF NOT EXISTS idx_jobs_employer_name ON jobs(employer_name);
-                CREATE INDEX IF NOT EXISTS idx_jobs_city_province ON jobs(city, province);
+                CREATE INDEX IF NOT EXISTS idx_raw_jobs_date_posted ON raw_scraped_jobs(date_posted DESC);
+                CREATE INDEX IF NOT EXISTS idx_raw_jobs_advertised_until ON raw_scraped_jobs(advertised_until);
+                CREATE INDEX IF NOT EXISTS idx_raw_jobs_noc_code ON raw_scraped_jobs(noc_code);
+                CREATE INDEX IF NOT EXISTS idx_raw_jobs_employer_name ON raw_scraped_jobs(employer_name);
+                CREATE INDEX IF NOT EXISTS idx_raw_jobs_city_province ON raw_scraped_jobs(city, province);
             """)
         conn.commit()
         conn.close()
@@ -156,7 +159,7 @@ def get_seen_job_ids() -> Set[str]:
     if is_postgres():
         conn = get_db()
         with conn.cursor() as cur:
-            cur.execute('SELECT job_id FROM jobs')
+            cur.execute('SELECT job_id FROM raw_scraped_jobs')
             res = {row['job_id'] for row in cur.fetchall()}
         conn.close()
         return res
@@ -184,16 +187,16 @@ def save_jobs_batch(jobs_list: List[Dict], batch_size: int = 250):
             cols_str = ', '.join(columns)
             placeholders = ', '.join(['%s'] * len(columns))
             sql = f'''
-                INSERT INTO jobs ({cols_str}) 
+                INSERT INTO raw_scraped_jobs ({cols_str}) 
                 VALUES ({placeholders}) 
                 ON CONFLICT(job_id) DO UPDATE SET 
-                    noc_code = CASE WHEN EXCLUDED.noc_code != '' AND EXCLUDED.noc_code IS NOT NULL THEN EXCLUDED.noc_code ELSE jobs.noc_code END,
-                    employer_email = CASE WHEN EXCLUDED.employer_email != '' AND EXCLUDED.employer_email IS NOT NULL THEN EXCLUDED.employer_email ELSE jobs.employer_email END, 
-                    company_website = CASE WHEN EXCLUDED.company_website != '' AND EXCLUDED.company_website IS NOT NULL THEN EXCLUDED.company_website ELSE jobs.company_website END, 
-                    company_phone = CASE WHEN EXCLUDED.company_phone != '' AND EXCLUDED.company_phone IS NOT NULL THEN EXCLUDED.company_phone ELSE jobs.company_phone END, 
-                    enrichment_status = CASE WHEN EXCLUDED.enrichment_status != '' AND EXCLUDED.enrichment_status IS NOT NULL THEN EXCLUDED.enrichment_status ELSE jobs.enrichment_status END,
-                    email_confidence = CASE WHEN EXCLUDED.email_confidence != '' AND EXCLUDED.email_confidence IS NOT NULL THEN EXCLUDED.email_confidence ELSE jobs.email_confidence END,
-                    email_verification_status = CASE WHEN EXCLUDED.email_verification_status != '' AND EXCLUDED.email_verification_status IS NOT NULL THEN EXCLUDED.email_verification_status ELSE jobs.email_verification_status END
+                    noc_code = CASE WHEN EXCLUDED.noc_code != '' AND EXCLUDED.noc_code IS NOT NULL THEN EXCLUDED.noc_code ELSE raw_scraped_jobs.noc_code END,
+                    employer_email = CASE WHEN EXCLUDED.employer_email != '' AND EXCLUDED.employer_email IS NOT NULL THEN EXCLUDED.employer_email ELSE raw_scraped_jobs.employer_email END, 
+                    company_website = CASE WHEN EXCLUDED.company_website != '' AND EXCLUDED.company_website IS NOT NULL THEN EXCLUDED.company_website ELSE raw_scraped_jobs.company_website END, 
+                    company_phone = CASE WHEN EXCLUDED.company_phone != '' AND EXCLUDED.company_phone IS NOT NULL THEN EXCLUDED.company_phone ELSE raw_scraped_jobs.company_phone END, 
+                    enrichment_status = CASE WHEN EXCLUDED.enrichment_status != '' AND EXCLUDED.enrichment_status IS NOT NULL THEN EXCLUDED.enrichment_status ELSE raw_scraped_jobs.enrichment_status END,
+                    email_confidence = CASE WHEN EXCLUDED.email_confidence != '' AND EXCLUDED.email_confidence IS NOT NULL THEN EXCLUDED.email_confidence ELSE raw_scraped_jobs.email_confidence END,
+                    email_verification_status = CASE WHEN EXCLUDED.email_verification_status != '' AND EXCLUDED.email_verification_status IS NOT NULL THEN EXCLUDED.email_verification_status ELSE raw_scraped_jobs.email_verification_status END
             '''
             values = [list(j.values()) for j in batch]
             with conn.cursor() as cur:
@@ -229,7 +232,7 @@ def update_job_noc(job_id: str, noc_code: str):
     if is_postgres():
         conn = get_db()
         with conn.cursor() as cur:
-            cur.execute('UPDATE jobs SET noc_code = %s WHERE job_id = %s', (noc_code, job_id))
+            cur.execute('UPDATE raw_scraped_jobs SET noc_code = %s WHERE job_id = %s', (noc_code, job_id))
         conn.commit()
         conn.close()
     else:
@@ -250,7 +253,7 @@ def update_enrichment(
         conn = get_db()
         with conn.cursor() as cur:
             cur.execute('''
-                UPDATE jobs 
+                UPDATE raw_scraped_jobs 
                 SET employer_email = %s,
                     company_website = %s,
                     company_phone = %s,
@@ -282,12 +285,12 @@ def get_all_jobs(active_only: bool = True) -> List[Dict]:
         with conn.cursor() as cur:
             if active_only:
                 cur.execute("""
-                    SELECT * FROM jobs 
+                    SELECT * FROM raw_scraped_jobs 
                     WHERE (advertised_until >= CURRENT_DATE::text OR advertised_until IS NULL OR advertised_until = '')
                     ORDER BY date_posted DESC, scraped_at DESC
                 """)
             else:
-                cur.execute('SELECT * FROM jobs ORDER BY date_posted DESC, scraped_at DESC')
+                cur.execute('SELECT * FROM raw_scraped_jobs ORDER BY date_posted DESC, scraped_at DESC')
             rows = [dict(r) for r in cur.fetchall()]
         conn.close()
         return rows
@@ -309,11 +312,11 @@ def clean_expired_jobs() -> int:
     if is_postgres():
         conn = get_db()
         with conn.cursor() as cur:
-            cur.execute("SELECT count(*) as count FROM jobs WHERE advertised_until < CURRENT_DATE::text AND advertised_until != ''")
+            cur.execute("SELECT count(*) as count FROM raw_scraped_jobs WHERE advertised_until < CURRENT_DATE::text AND advertised_until != ''")
             res = cur.fetchone()
             expired_count = res['count'] if isinstance(res, dict) else res[0]
             if expired_count > 0:
-                cur.execute("DELETE FROM jobs WHERE advertised_until < CURRENT_DATE::text AND advertised_until != ''")
+                cur.execute("DELETE FROM raw_scraped_jobs WHERE advertised_until < CURRENT_DATE::text AND advertised_until != ''")
         conn.commit()
         conn.close()
         return expired_count
